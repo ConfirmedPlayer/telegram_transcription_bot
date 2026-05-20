@@ -54,7 +54,7 @@ async def handle_video_note(message: Message):
         
         result = await deepgram_service.transcribe_audio(file_url)
         text, reply_markup = format_transcription(result)
-        await processing_msg.edit_text(text, reply_markup=reply_markup)
+        await processing_msg.edit_text(text[0], reply_markup=reply_markup)
         
     except Exception as e:
         error_msg = f"❌ Ошибка при обработке видео: {str(e)[:200]}..."
