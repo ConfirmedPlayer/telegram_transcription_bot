@@ -1,5 +1,4 @@
 from models.transcription import TranscriptionResult
-from handlers.style import get_style_keyboard
 from aiogram.types import InlineKeyboardMarkup
 from typing import List, Tuple, Optional
 
@@ -30,4 +29,4 @@ def format_transcription(result: TranscriptionResult) -> Tuple[List[str], Option
     parts = split_long_message(result.text)
     
     # Return parts and keyboard for the last message
-    return parts, get_style_keyboard()
+    return parts, None

@@ -27,6 +27,9 @@ async def handle_video(message: Message):
         # Format and send
         parts, reply_markup = format_transcription(result)
         
+        if not parts:
+            return
+        
         # Send all parts except last one
         for part in parts[:-1]:
             await message.answer(part)

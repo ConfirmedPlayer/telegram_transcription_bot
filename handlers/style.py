@@ -7,20 +7,6 @@ from loguru import logger
 router = Router()
 anthropic_service = AnthropicService(config.ANTHROPIC_API_KEY)
 
-def get_style_keyboard() -> InlineKeyboardMarkup:
-    """Create keyboard with style buttons."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✍️ Proofread", callback_data="style_proofread"),
-                InlineKeyboardButton(text="⚡ Informal", callback_data="style_my"),
-                InlineKeyboardButton(text="👔 Business", callback_data="style_business")
-            ],
-            [
-                InlineKeyboardButton(text="📋 Brief", callback_data="style_brief")
-            ]
-        ]
-    )
 
 @router.callback_query(F.data.startswith("style_"))
 async def process_style_selection(callback: CallbackQuery):
@@ -39,6 +25,9 @@ async def process_style_selection(callback: CallbackQuery):
         
         # Process text with selected style
         processed_text = await anthropic_service.process_text(original_text, style)
+        
+        if not processed_text:
+            return
         
         # Send result as a new message (without prefix)
         await callback.message.answer(processed_text)
