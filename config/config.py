@@ -23,4 +23,11 @@ class Config(BaseModel):
     LLM_FALLBACK_MODEL: str = os.getenv("LLM_FALLBACK_MODEL") or "qwen/qwen3.8-27b"
     LLM_FALLBACK_EXTRA: str = os.getenv("LLM_FALLBACK_EXTRA") or '{"reasoning_effort": "none"}'
 
+    # Сводка: пороги и бюджеты (services/summary.py)
+    SUMMARY_MIN_WORDS: int = int(os.getenv("SUMMARY_MIN_WORDS") or "100")
+    CONTEXT_MIN_WORDS: int = int(os.getenv("CONTEXT_MIN_WORDS") or "1")
+    SUMMARY_TOTAL_TIMEOUT: float = float(os.getenv("SUMMARY_TOTAL_TIMEOUT") or "15")
+    SUMMARY_MAX_OUTPUT_TOKENS: int = int(os.getenv("SUMMARY_MAX_OUTPUT_TOKENS") or "350")
+    SUMMARY_MAX_INPUT_CHARS: int = int(os.getenv("SUMMARY_MAX_INPUT_CHARS") or "12000")
+
 config = Config()
