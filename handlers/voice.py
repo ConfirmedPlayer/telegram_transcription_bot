@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from services.deepgram import DeepgramService
-from utils.formatting import format_transcription
+from services.delivery import deliver
 from config.config import config
 from loguru import logger
 import traceback
@@ -24,18 +24,8 @@ async def handle_voice(message: Message):
         # Transcribe
         result = await deepgram_service.transcribe_audio(file_url)
         
-        # Format and send
-        parts, reply_markup = format_transcription(result)
-        
-        if not parts:
-            return
-        
-        # Send all parts except last one
-        for part in parts[:-1]:
-            await message.answer(part)
-        
-        # Send last part with keyboard
-        await message.answer(parts[-1], reply_markup=reply_markup)
+        # Summary first, then transcript
+        await deliver(message, result.text, "voice")
         
     except Exception as e:
         error_msg = f"Ошибка: {str(e)}"
