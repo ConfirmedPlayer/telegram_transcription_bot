@@ -25,7 +25,7 @@ async def handle_voice(message: Message):
         # Transcribe
         result = await deepgram_service.transcribe_audio(file_url)
         
-        # Summary first, then transcript
+        # Only the summary goes to the chat
         await deliver(message, result.text, "voice")
         
     except Exception as e:
