@@ -6,9 +6,12 @@ from aiogram.client.default import DefaultBotProperties
 from config.config import config
 from handlers import voice, video, audio, style, commands
 from loguru import logger
+from utils.redact import redact_log_record
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+# Токен бота вычищается из каждой записи до того, как она попадёт в stderr или в файл
+logger.configure(patcher=redact_log_record)
 try:
     logger.add("logs/bot.log", rotation="1 day", compression="zip")
 except PermissionError:
