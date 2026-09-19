@@ -1,0 +1,17 @@
+# Локальные окружения: в образе зависимости ставит pip, а .venv собран под macOS
+.venv
+venv
+
+# Секреты: в контейнер переменные попадают через env_file в docker-compose.yml
+.env
+
+# Служебное
+.git
+.specstory
+**/__pycache__
+**/*.pyc
+.pytest_cache
+
+# Логи живут в смонтированном томе logs/, а не в образе
+logs
+*.log
