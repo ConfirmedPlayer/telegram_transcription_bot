@@ -25,11 +25,13 @@ class DeepgramService:
         
         params = {
             "language": "ru",
-            "model": "nova-2",
+            "model": "nova-3",
             "punctuate": "true",
             "paragraphs": "true",
             "smart_format": "true",
             "profanity_filter": "false",
+            # Без этого Deepgram может оставлять записи себе для обучения моделей
+            "mip_opt_out": "true",
         }
 
         async with ClientSession(connector=TCPConnector(ssl=self.ssl_context)) as session:
