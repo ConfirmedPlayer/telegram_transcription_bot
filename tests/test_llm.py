@@ -1,9 +1,12 @@
 import asyncio
 
+import anthropic
 import httpx2
 import openai
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
-from services.llm import Provider, complete, strip_think
+from services.llm import Provider, call_anthropic, complete, strip_think
 
 PRIMARY = Provider("https://api.cerebras.ai/v1", "key-1", "qwen-3.8-27b")
 FALLBACK = Provider("https://api.groq.com/openai/v1", "key-2", "qwen/qwen3.8-27b")
@@ -105,3 +108,72 @@ async def test_slow_provider_is_cut_by_deadline():
                             call=call, clock=loop.time, min_attempt=0.05)
     assert result is None  # на резерв времени уже не осталось
     assert loop.time() - started < 1.0
+
+
+# --- Claude через родной API Anthropic ---
+
+CLAUDE = Provider("https://api.anthropic.com", "sk-ant-test", "claude-opus-5-5", {"output_config": {"effort": "low"}})
+
+
+def claude_reply(stop_reason="end_turn"):
+    return {
+        "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+        "content": [
+            {"type": "thinking", "thinking": "", "signature": "sig"},
+            {"type": "text", "text": "Сводка"},
+        ],
+        "stop_reason": stop_reason, "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+
+async def call_claude_locally(reply):
+    """Вызвать Claude через локальный сервер вместо api.anthropic.com; вернуть ответ, тело и заголовки запроса."""
+    seen = {}
+
+    async def messages(request):
+        seen["path"] = request.path
+        seen["body"] = await request.json()
+        seen["api_key"] = request.headers.get("x-api-key")
+        return web.json_response(reply)
+
+    app = web.Application()
+    app.router.add_post("/v1/messages", messages)
+    async with TestServer(app) as server:
+        local = Provider(str(server.make_url("")), CLAUDE.api_key, CLAUDE.model, CLAUDE.extra)
+        text = await call_anthropic(local, MESSAGES, 350, 5.0)
+    return text, seen
+
+
+def test_anthropic_provider_is_recognised_by_host():
+    assert CLAUDE.is_anthropic
+    assert not FALLBACK.is_anthropic
+
+
+async def test_claude_answer_is_only_text_without_thinking():
+    text, seen = await call_claude_locally(claude_reply())
+    assert text == "Сводка"
+    assert seen["path"] == "/v1/messages"
+    assert seen["api_key"] == "sk-ant-test"
+    assert seen["body"]["model"] == "claude-opus-5-5"
+    assert seen["body"]["output_config"] == {"effort": "low"}
+
+
+async def test_claude_gets_room_for_thinking_beyond_summary_limit():
+    _, seen = await call_claude_locally(claude_reply())
+    assert seen["body"]["max_tokens"] > 350
+
+
+async def test_claude_refusal_is_empty_answer():
+    text, _ = await call_claude_locally(claude_reply(stop_reason="refusal"))
+    assert text == ""
+
+
+async def test_claude_auth_error_is_logged_as_error(clock, log_records):
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    error = anthropic.AuthenticationError("invalid x-api-key", response=httpx2.Response(401, request=request), body=None)
+    call = FakeCall(**{"api.anthropic.com": error, "api.groq.com": "Резерв"})
+    result = await complete(MESSAGES, [CLAUDE, FALLBACK], clock() + 15, 350, call=call, clock=clock)
+    assert result == ("Резерв", "api.groq.com")
+    errors = [text for level, text in log_records if level == "ERROR"]
+    assert any("api.anthropic.com" in text and "ключ" in text for text in errors)

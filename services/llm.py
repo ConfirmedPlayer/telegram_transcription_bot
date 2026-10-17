@@ -1,4 +1,4 @@
-"""Запрос сводки: два OpenAI-совместимых провайдера, общий дедлайн, ровно одна попытка на каждого."""
+"""Запрос сводки: два провайдера (OpenAI-совместимые или Claude), общий дедлайн, ровно одна попытка на каждого."""
 import asyncio
 import json
 import re
@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+import anthropic
 import openai
 from loguru import logger
 
@@ -14,11 +15,16 @@ from config.config import config
 
 MIN_ATTEMPT_SECONDS = 2.0
 CONNECT_TIMEOUT = 3.0
+# Claude Opus 5.5 рассуждает всегда, и рассуждения входят в max_tokens: без запаса они съедят лимит сводки
+THINKING_HEADROOM = 4000
 
 Messages = List[Dict[str, str]]
 
 _THINK_BLOCK = re.compile(r"^\s*<think>.*?</think>", re.S | re.I)
-_AUTH_ERRORS = (openai.AuthenticationError, openai.PermissionDeniedError, openai.NotFoundError)
+_AUTH_ERRORS = (
+    openai.AuthenticationError, openai.PermissionDeniedError, openai.NotFoundError,
+    anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.NotFoundError,
+)
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,10 @@ class Provider:
     @property
     def name(self) -> str:
         return urlparse(self.base_url).hostname or self.base_url
+
+    @property
+    def is_anthropic(self) -> bool:
+        return self.name.endswith("anthropic.com")
 
 
 def strip_think(text: Optional[str]) -> str:
@@ -54,8 +64,36 @@ def _client(provider: Provider) -> openai.AsyncOpenAI:
     return client
 
 
+_anthropic_clients: Dict[Tuple[str, str], anthropic.AsyncAnthropic] = {}
+
+
+def _anthropic_client(provider: Provider) -> anthropic.AsyncAnthropic:
+    key = (provider.base_url, provider.api_key)
+    client = _anthropic_clients.get(key)
+    if client is None:
+        client = anthropic.AsyncAnthropic(base_url=provider.base_url, api_key=provider.api_key, max_retries=0)
+        _anthropic_clients[key] = client
+    return client
+
+
+async def call_anthropic(provider: Provider, messages: Messages, max_tokens: int, timeout: float) -> str:
+    """Один запрос к Claude через родной API. Отказ модели — пустой ответ, тогда сработает резерв."""
+    response = await _anthropic_client(provider).messages.create(
+        model=provider.model,
+        messages=messages,
+        max_tokens=max_tokens + THINKING_HEADROOM,
+        timeout=timeout,
+        extra_body=provider.extra or None,
+    )
+    if response.stop_reason == "refusal":
+        return ""
+    return "".join(block.text for block in response.content if block.type == "text")
+
+
 async def call_provider(provider: Provider, messages: Messages, max_tokens: int, timeout: float) -> str:
     """Один запрос к провайдеру."""
+    if provider.is_anthropic:
+        return await call_anthropic(provider, messages, max_tokens, timeout)
     response = await _client(provider).chat.completions.create(
         model=provider.model,
         messages=messages,
